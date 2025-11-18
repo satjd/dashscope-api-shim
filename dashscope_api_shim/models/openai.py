@@ -35,7 +35,7 @@ class ChatCompletionRequest(BaseModel):
     tools: Optional[List[Dict[str, Any]]] = None
     tool_choice: Optional[Union[str, Dict[str, Any]]] = None
     response_format: Optional[Dict[str, Any]] = None
-    reasoning_effort: Optional[str] = Field(default='low', description="Reasoning effort level: 'low', 'medium', or 'high'")
+    reasoning_effort: Optional[str] = Field(default=None, description="Reasoning effort level: 'low', 'medium', or 'high'")
 
 
 class Choice(BaseModel):

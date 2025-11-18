@@ -140,9 +140,9 @@ class BailianTranslator:
         extra_params = request.model_dump(exclude_unset=True)
 
         # Map reasoning_effort to enable_thinking (OpenAI o1-style)
-        # This takes highest priority as it's explicit in the request
-        reasoning_effort = request.reasoning_effort or extra_params.get("reasoning_effort")
-        if reasoning_effort:
+        # reasoning_effort takes highest priority if explicitly provided
+        if "reasoning_effort" in extra_params and extra_params["reasoning_effort"]:
+            reasoning_effort = extra_params["reasoning_effort"]
             effort_lower = reasoning_effort.lower()
             if effort_lower == "low":
                 # Low: Enable thinking but disable thoughts display
@@ -153,7 +153,8 @@ class BailianTranslator:
                 enable_thinking = True
                 has_thoughts = True
         else:
-            # Check for explicit parameters in request
+            # No reasoning_effort in request, check explicit enable_thinking/has_thoughts
+            # or fall back to per-app defaults
             if "has_thoughts" in extra_params:
                 has_thoughts = extra_params["has_thoughts"]
             elif default_has_thoughts is not None:
@@ -371,8 +372,9 @@ class BailianTranslator:
                 }
                 yield f"data: {json.dumps(role_chunk, ensure_ascii=False)}\n\n"
 
-                # Send initial reasoning indicator only if has_thoughts is enabled
-                if has_thoughts:
+                # Send initial reasoning indicator if has_thoughts OR enable_thinking is enabled
+                # This opens Cherry Studio's thinking panel even if no actual reasoning is shown
+                if has_thoughts or enable_thinking:
                     reasoning_start = {
                         "id": chat_id,
                         "object": "chat.completion.chunk",
@@ -380,7 +382,7 @@ class BailianTranslator:
                         "model": model_name,
                         "choices": [{
                             "index": 0,
-                            "delta": {"reasoning_content": "正在思考..."},
+                            "delta": {"reasoning_content": "正在思考…"},
                             "finish_reason": None
                         }]
                     }

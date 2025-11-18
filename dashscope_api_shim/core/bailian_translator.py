@@ -340,19 +340,20 @@ class BailianTranslator:
                 }
                 yield f"data: {json.dumps(role_chunk, ensure_ascii=False)}\n\n"
 
-                # Send initial reasoning indicator (opens thinking panel in some UIs)
-                reasoning_start = {
-                    "id": chat_id,
-                    "object": "chat.completion.chunk",
-                    "created": created_time,
-                    "model": model_name,
-                    "choices": [{
-                        "index": 0,
-                        "delta": {"reasoning_content": "正在思考..."},
-                        "finish_reason": None
-                    }]
-                }
-                yield f"data: {json.dumps(reasoning_start, ensure_ascii=False)}\n\n"
+                # Send initial reasoning indicator only if has_thoughts is enabled
+                if has_thoughts:
+                    reasoning_start = {
+                        "id": chat_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_time,
+                        "model": model_name,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"reasoning_content": "正在思考..."},
+                            "finish_reason": None
+                        }]
+                    }
+                    yield f"data: {json.dumps(reasoning_start, ensure_ascii=False)}\n\n"
 
                 buffer = ""
                 prev_answer_full = ""
@@ -399,30 +400,31 @@ class BailianTranslator:
                             logger.warning(f"Failed to parse SSE data: {e}")
                             continue
 
-                        # Extract and process reasoning content
-                        reasoning_full = self.extract_reasoning_delta(obj)
-                        if reasoning_full:
-                            # Calculate delta
-                            reasoning_delta = reasoning_full
-                            if reasoning_full.startswith(prev_reasoning_full):
-                                reasoning_delta = reasoning_full[len(prev_reasoning_full):]
-                            prev_reasoning_full = reasoning_full
+                        # Extract and process reasoning content only if has_thoughts is enabled
+                        if has_thoughts:
+                            reasoning_full = self.extract_reasoning_delta(obj)
+                            if reasoning_full:
+                                # Calculate delta
+                                reasoning_delta = reasoning_full
+                                if reasoning_full.startswith(prev_reasoning_full):
+                                    reasoning_delta = reasoning_full[len(prev_reasoning_full):]
+                                prev_reasoning_full = reasoning_full
 
-                            # Sanitize and send reasoning chunk
-                            safe_reasoning = self.sanitize_reasoning(reasoning_delta)
-                            if safe_reasoning:
-                                reasoning_chunk = {
-                                    "id": chat_id,
-                                    "object": "chat.completion.chunk",
-                                    "created": created_time,
-                                    "model": model_name,
-                                    "choices": [{
-                                        "index": 0,
-                                        "delta": {"reasoning_content": safe_reasoning},
-                                        "finish_reason": None
-                                    }]
-                                }
-                                yield f"data: {json.dumps(reasoning_chunk, ensure_ascii=False)}\n\n"
+                                # Sanitize and send reasoning chunk
+                                safe_reasoning = self.sanitize_reasoning(reasoning_delta)
+                                if safe_reasoning:
+                                    reasoning_chunk = {
+                                        "id": chat_id,
+                                        "object": "chat.completion.chunk",
+                                        "created": created_time,
+                                        "model": model_name,
+                                        "choices": [{
+                                            "index": 0,
+                                            "delta": {"reasoning_content": safe_reasoning},
+                                            "finish_reason": None
+                                        }]
+                                    }
+                                    yield f"data: {json.dumps(reasoning_chunk, ensure_ascii=False)}\n\n"
 
                         # Extract and process answer content
                         answer_full = self.extract_answer_text(obj)

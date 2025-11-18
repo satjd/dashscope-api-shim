@@ -1,14 +1,14 @@
-"""Tests for the DashScope translator."""
+"""Tests for the Bailian translator."""
 
 import pytest
-from dashscope_api_shim.core.translator import DashScopeTranslator
+from dashscope_api_shim.core.bailian_translator import BailianTranslator
 from dashscope_api_shim.models.openai import ChatCompletionRequest, ChatMessage
 
 
 @pytest.fixture
 def translator():
     """Create a translator instance."""
-    return DashScopeTranslator()
+    return BailianTranslator()
 
 
 @pytest.fixture
@@ -25,104 +25,92 @@ def sample_openai_request():
     )
 
 
-def test_translate_model_name(translator):
-    """Test model name translation."""
-    # Test with mapping
-    assert translator.translate_model_name("gpt-3.5-turbo") == "qwen-turbo"
-    assert translator.translate_model_name("gpt-4") == "qwen-plus"
+def test_messages_to_prompt(translator):
+    """Test messages to prompt conversion."""
+    messages = [
+        ChatMessage(role="system", content="You are a helpful assistant."),
+        ChatMessage(role="user", content="Hello!"),
+        ChatMessage(role="assistant", content="Hi there!"),
+        ChatMessage(role="user", content="How are you?"),
+    ]
 
-    # Test without mapping (pass-through)
-    assert translator.translate_model_name("qwen-max") == "qwen-max"
-    assert translator.translate_model_name("custom-model") == "custom-model"
+    prompt = translator.messages_to_prompt(messages)
 
-
-def test_openai_to_dashscope(translator, sample_openai_request):
-    """Test OpenAI to DashScope request conversion."""
-    dashscope_request = translator.openai_to_dashscope(sample_openai_request)
-
-    # Check model translation
-    assert dashscope_request.model == "qwen-turbo"
-
-    # Check messages
-    assert len(dashscope_request.input.messages) == 2
-    assert dashscope_request.input.messages[0].role == "system"
-    assert dashscope_request.input.messages[0].content == "You are a helpful assistant."
-    assert dashscope_request.input.messages[1].role == "user"
-    assert dashscope_request.input.messages[1].content == "Hello, how are you?"
-
-    # Check parameters
-    assert dashscope_request.parameters.temperature == 0.7
-    assert dashscope_request.parameters.max_tokens == 150
+    # Check prompt format
+    assert "You are a helpful assistant." in prompt
+    assert "Hello!" in prompt
+    assert "Hi there!" in prompt
+    assert "How are you?" in prompt
 
 
-def test_dashscope_to_openai(translator, sample_openai_request):
-    """Test DashScope to OpenAI response conversion."""
-    dashscope_response = {
-        "request_id": "test-request-id",
+def test_extract_answer_text(translator):
+    """Test extracting answer text from Bailian response."""
+    # Test with text in output
+    response1 = {
         "output": {
-            "text": "I'm doing well, thank you for asking!",
-            "finish_reason": "stop",
-        },
-        "usage": {
-            "input_tokens": 20,
-            "output_tokens": 10,
-            "total_tokens": 30,
-        },
+            "text": "Hello, world!"
+        }
     }
+    assert translator.extract_answer_text(response1) == "Hello, world!"
 
-    openai_response = translator.dashscope_to_openai(
-        dashscope_response, sample_openai_request
-    )
-
-    # Check response structure
-    assert openai_response.object == "chat.completion"
-    assert openai_response.model == "gpt-3.5-turbo"
-    assert len(openai_response.choices) == 1
-
-    # Check choice
-    choice = openai_response.choices[0]
-    assert choice.index == 0
-    assert choice.message.role == "assistant"
-    assert choice.message.content == "I'm doing well, thank you for asking!"
-    assert choice.finish_reason == "stop"
-
-    # Check usage
-    assert openai_response.usage.prompt_tokens == 20
-    assert openai_response.usage.completion_tokens == 10
-    assert openai_response.usage.total_tokens == 30
-
-
-@pytest.mark.asyncio
-async def test_create_chat_completion_mock(translator, sample_openai_request, mocker):
-    """Test create_chat_completion with mocked HTTP client."""
-    # Mock the httpx client
-    mock_response = mocker.Mock()
-    mock_response.json.return_value = {
-        "request_id": "test-request-id",
-        "output": {
-            "text": "Mocked response",
-            "finish_reason": "stop",
-        },
-        "usage": {
-            "input_tokens": 15,
-            "output_tokens": 5,
-            "total_tokens": 20,
-        },
+    # Test with text at root level
+    response2 = {
+        "text": "Root level text"
     }
-    mock_response.raise_for_status = mocker.Mock()
+    assert translator.extract_answer_text(response2) == "Root level text"
 
-    mock_client = mocker.AsyncMock()
-    mock_client.post.return_value = mock_response
-    mock_client.__aenter__.return_value = mock_client
-    mock_client.__aexit__.return_value = None
+    # Test with output_text
+    response3 = {
+        "output_text": "Output text field"
+    }
+    assert translator.extract_answer_text(response3) == "Output text field"
 
-    mocker.patch("httpx.AsyncClient", return_value=mock_client)
+    # Test with no text
+    response4 = {"output": {}}
+    assert translator.extract_answer_text(response4) == ""
 
-    # Call the method
-    response = await translator.create_chat_completion(
-        sample_openai_request, "test-api-key"
+
+def test_get_thinking_params(translator):
+    """Test thinking parameter extraction."""
+    # Test default (reasoning_effort='low' by default)
+    request1 = ChatCompletionRequest(
+        model="test-model",
+        messages=[ChatMessage(role="user", content="Hello")]
     )
+    has_thoughts, enable_thinking, incremental = translator._get_thinking_params(request1)
+    assert has_thoughts is False  # Low means thinking enabled but hidden
+    assert enable_thinking is True
+    assert incremental is True
 
-    # Verify response
-    assert response.choices[0].message.content == "Mocked response"
-    assert response.usage.total_tokens == 20
+    # Test explicit reasoning_effort='low'
+    request2 = ChatCompletionRequest(
+        model="test-model",
+        messages=[ChatMessage(role="user", content="Hello")],
+        reasoning_effort="low"
+    )
+    has_thoughts, enable_thinking, incremental = translator._get_thinking_params(request2)
+    assert has_thoughts is False
+    assert enable_thinking is True
+    assert incremental is True
+
+    # Test reasoning_effort='medium'
+    request3 = ChatCompletionRequest(
+        model="test-model",
+        messages=[ChatMessage(role="user", content="Hello")],
+        reasoning_effort="medium"
+    )
+    has_thoughts, enable_thinking, incremental = translator._get_thinking_params(request3)
+    assert has_thoughts is True
+    assert enable_thinking is True
+    assert incremental is True
+
+    # Test reasoning_effort='high'
+    request4 = ChatCompletionRequest(
+        model="test-model",
+        messages=[ChatMessage(role="user", content="Hello")],
+        reasoning_effort="high"
+    )
+    has_thoughts, enable_thinking, incremental = translator._get_thinking_params(request4)
+    assert has_thoughts is True
+    assert enable_thinking is True
+    assert incremental is True

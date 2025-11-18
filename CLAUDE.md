@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a FastAPI-based API shim that translates Aliyun DashScope API requests to OpenAI Chat Completions API format. It allows OpenAI-compatible clients to seamlessly use DashScope's language models (Qwen series).
+This is a FastAPI-based API shim that provides OpenAI Chat Completions API compatibility for Aliyun Bailian applications. It allows OpenAI-compatible clients to seamlessly use Bailian apps with advanced chain-of-thought reasoning support, similar to OpenAI's o1 model.
 
 ## Development Commands
 
@@ -38,61 +38,95 @@ pre-commit run --all-files  # Run all pre-commit hooks
 ### Docker
 ```bash
 make docker-build        # Build Docker image
-make docker-run          # Run container (requires DASHSCOPE_API_KEY env var)
+make docker-run          # Run container (requires DASHSCOPE_API_KEY and BAILIAN_APP_ID)
 make docker-stop         # Stop and remove container
 make docker-logs         # View container logs
 ```
 
 ## Architecture
 
-### Core Translation Flow
+### Core Request Flow
 
 The application follows this request flow:
 
 1. **API Layer** (`dashscope_api_shim/api/chat.py`): FastAPI endpoint receives OpenAI-formatted request
-2. **Translation** (`dashscope_api_shim/core/translator.py`): DashScopeTranslator converts between formats
-3. **External API Call**: Makes request to DashScope API
-4. **Response Translation**: Converts DashScope response back to OpenAI format
-5. **Return**: Returns OpenAI-compatible response to client
+2. **Reasoning Parameter Extraction** (`dashscope_api_shim/core/bailian_translator.py`): Extracts `reasoning_effort` and thinking parameters
+3. **Message Conversion**: Converts OpenAI messages array to Bailian prompt format
+4. **Bailian API Call**: Makes request to Bailian App API with thinking parameters
+5. **Response Processing**: Extracts answer and optional reasoning content
+6. **OpenAI Format Response**: Returns OpenAI-compatible ChatCompletionResponse or SSE stream
 
 ### Key Components
 
-**DashScopeTranslator** (`core/translator.py`): The core translation engine
-- `openai_to_dashscope()`: Converts OpenAI ChatCompletionRequest to DashScope format
-- `dashscope_to_openai()`: Converts DashScope response to OpenAI ChatCompletionResponse
-- `translate_model_name()`: Maps OpenAI model names (e.g., gpt-3.5-turbo) to DashScope models (e.g., qwen-turbo)
+**BailianTranslator** (`core/bailian_translator.py`): The core translation engine
+- `messages_to_prompt()`: Converts OpenAI messages array to a single prompt string
+- `extract_answer_text()`: Extracts answer text from Bailian API response
+- `extract_reasoning_delta()`: Extracts reasoning/thinking content for streaming
+- `sanitize_reasoning()`: Truncates and cleans reasoning text to max length
+- `_get_thinking_params()`: Extracts thinking parameters from request (has_thoughts, enable_thinking, incremental_output)
 - `create_chat_completion()`: Handles non-streaming requests
-- `create_chat_completion_stream()`: Handles SSE streaming requests
+- `create_chat_completion_stream()`: Handles SSE streaming requests with reasoning support
 
 **Pydantic Models** (`models/`):
-- `models/openai.py`: OpenAI API data models (ChatCompletionRequest, ChatCompletionResponse, etc.)
-- `models/dashscope.py`: DashScope API data models (DashScopeRequest, DashScopeMessage, etc.)
+- `models/openai.py`: OpenAI API data models with reasoning_effort extension
+  - `ChatCompletionRequest`: Includes `reasoning_effort` field ('low', 'medium', 'high')
+  - `ChatCompletionResponse`: Standard OpenAI response format
+  - `ChatCompletionChunk`: For streaming responses
+  - `ChoiceDelta`: For streaming deltas with reasoning_content support
 
 **Configuration** (`core/config.py`):
 - Uses pydantic-settings for environment-based configuration
 - Settings loaded from `.env` file
-- Key config: `MODEL_MAPPING` dict maps OpenAI model names to DashScope equivalents
+- Required: `DASHSCOPE_API_KEY`, `BAILIAN_APP_ID`
+- Optional: `DASHSCOPE_BASE_URL`, `BAILIAN_REASONING_DELTA_MAX`, `REQUEST_TIMEOUT`
 
 **API Routers**:
 - `api/chat.py`: `/v1/chat/completions` endpoint (supports both streaming and non-streaming)
-- `api/models.py`: `/v1/models` endpoint for model listing
+- `api/models.py`: `/v1/models` endpoint (returns Bailian app model)
 
 ### Authentication
 
-API key authentication is handled via the `Authorization: Bearer <token>` header. The token is extracted by `get_api_key()` dependency in `api/chat.py` and passed to DashScope API.
+API key authentication is handled via the `Authorization: Bearer <token>` header. The token is extracted by `get_api_key()` dependency in `api/chat.py` and passed to Bailian API. Falls back to `DASHSCOPE_API_KEY` environment variable if header is not provided.
+
+### Reasoning Support
+
+The application supports OpenAI o1-style reasoning via the `reasoning_effort` parameter:
+
+| reasoning_effort | has_thoughts | enable_thinking | Behavior |
+|-----------------|--------------|-----------------|----------|
+| 'low' (default) | False | True | Thinking enabled, reasoning hidden |
+| 'medium' | True | True | Thinking enabled, reasoning visible |
+| 'high' | True | True | Thinking enabled, reasoning visible |
+
+**Implementation Details:**
+- `reasoning_effort='low'`: Bailian thinks internally but reasoning content is not sent to client
+- `reasoning_effort='medium'` or `'high'`: Reasoning chunks are streamed via `reasoning_content` field in deltas
+- Initial reasoning indicator ("正在思考...") only sent when `has_thoughts=True`
+- Reasoning content extracted from Bailian's `thoughts` array and sanitized to max length
 
 ### Streaming vs Non-Streaming
 
-- Non-streaming: Returns complete `ChatCompletionResponse`
-- Streaming: Returns `StreamingResponse` with SSE (Server-Sent Events) format
+- **Non-streaming**: Returns complete `ChatCompletionResponse` with answer text
+- **Streaming**: Returns `StreamingResponse` with SSE (Server-Sent Events) format
+  - Role chunk: `{"delta": {"role": "assistant"}}`
+  - Reasoning chunk (if has_thoughts): `{"delta": {"reasoning_content": "..."}}`
+  - Content chunks: `{"delta": {"content": "..."}}`
+  - Final chunk: `{"delta": {}, "finish_reason": "stop"}`
 - Streaming detection: Based on `request.stream` boolean in ChatCompletionRequest
-- DashScope streaming uses `incremental_output=True` parameter
+- Bailian streaming uses `incremental_output=True` parameter
 
 ## Configuration
 
-The application uses pydantic-settings with `.env` file. Required variables:
-- `DASHSCOPE_API_KEY`: Your DashScope API key (required)
-- `DASHSCOPE_BASE_URL`: DashScope API endpoint (default: https://dashscope.aliyuncs.com/api/v1)
+The application uses pydantic-settings with `.env` file.
+
+### Required Variables
+- `DASHSCOPE_API_KEY`: Your DashScope API key
+- `BAILIAN_APP_ID`: Your Bailian application ID
+
+### Optional Variables
+- `DASHSCOPE_BASE_URL`: DashScope API endpoint (default: `https://dashscope.aliyuncs.com/api/v1`)
+- `BAILIAN_REASONING_DELTA_MAX`: Maximum reasoning content length per chunk (default: 180 characters)
+- `REQUEST_TIMEOUT`: API request timeout in seconds (default: 600 seconds for long reasoning tasks)
 
 See `.env.example` for all available configuration options.
 

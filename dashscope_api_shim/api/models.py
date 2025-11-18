@@ -19,7 +19,7 @@ async def list_models():
 
     Returns a list of all configured Bailian app models from the mapping.
     """
-    app_mapping = settings.get_app_mapping()
+    model_list = settings.get_model_list()
     created_time = int(time.time())
 
     models = [
@@ -32,7 +32,7 @@ async def list_models():
             "root": model_name,
             "parent": None,
         }
-        for model_name in app_mapping.keys()
+        for model_name in model_list
     ]
 
     return {

@@ -43,9 +43,9 @@ async def create_chat_completion(
     try:
         logger.info(f"Processing chat completion request for model: {request.model}")
 
-        # Get app_id for the requested model
-        app_id = settings.get_app_id_for_model(request.model)
-        if not app_id:
+        # Get app config for the requested model
+        app_config = settings.get_app_config_for_model(request.model)
+        if not app_config:
             raise HTTPException(
                 status_code=404,
                 detail={
@@ -57,11 +57,11 @@ async def create_chat_completion(
                 },
             )
 
-        logger.info(f"Using Bailian app ID: {app_id}")
+        logger.info(f"Using Bailian app ID: {app_config.app_id} (enable_thinking={app_config.enable_thinking}, has_thoughts={app_config.has_thoughts})")
 
-        # Use Bailian translator with the mapped app_id
+        # Use Bailian translator with the mapped app_config
         if request.stream:
-            stream = translator.create_chat_completion_stream(request, api_key, app_id)
+            stream = translator.create_chat_completion_stream(request, api_key, app_config)
             return StreamingResponse(
                 stream,
                 media_type="text/event-stream",
@@ -72,7 +72,7 @@ async def create_chat_completion(
                 },
             )
         else:
-            response = await translator.create_chat_completion(request, api_key, app_id)
+            response = await translator.create_chat_completion(request, api_key, app_config)
             return response
 
     except Exception as e:

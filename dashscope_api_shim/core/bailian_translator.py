@@ -8,7 +8,7 @@ from typing import AsyncGenerator, Dict, Any, List, Optional
 
 import httpx
 
-from dashscope_api_shim.core.config import settings
+from dashscope_api_shim.core.config import settings, AppConfig
 from dashscope_api_shim.models.openai import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -120,12 +120,19 @@ class BailianTranslator:
 
         return "".join(reasoning_pieces)
 
-    def _get_thinking_params(self, request: ChatCompletionRequest) -> tuple[bool, bool, bool]:
+    def _get_thinking_params(
+        self,
+        request: ChatCompletionRequest,
+        default_enable_thinking: Optional[bool] = None,
+        default_has_thoughts: Optional[bool] = None,
+    ) -> tuple[bool, bool, bool]:
         """
-        Extract thinking parameters from request.
+        Extract thinking parameters from request with per-app defaults.
 
         Args:
             request: Chat completion request
+            default_enable_thinking: Per-app default for enable_thinking (overrides global default)
+            default_has_thoughts: Per-app default for has_thoughts (overrides global default)
 
         Returns:
             Tuple of (has_thoughts, enable_thinking, incremental_output)
@@ -133,6 +140,7 @@ class BailianTranslator:
         extra_params = request.model_dump(exclude_unset=True)
 
         # Map reasoning_effort to enable_thinking (OpenAI o1-style)
+        # This takes highest priority as it's explicit in the request
         reasoning_effort = request.reasoning_effort or extra_params.get("reasoning_effort")
         if reasoning_effort:
             effort_lower = reasoning_effort.lower()
@@ -145,9 +153,24 @@ class BailianTranslator:
                 enable_thinking = True
                 has_thoughts = True
         else:
-            # Fall back to legacy parameters (disabled by default)
-            has_thoughts = extra_params.get("has_thoughts", False)
-            enable_thinking = extra_params.get("enable_thinking", False)
+            # Check for explicit parameters in request
+            if "has_thoughts" in extra_params:
+                has_thoughts = extra_params["has_thoughts"]
+            elif default_has_thoughts is not None:
+                # Use per-app default if provided
+                has_thoughts = default_has_thoughts
+            else:
+                # Fall back to global default (disabled)
+                has_thoughts = False
+
+            if "enable_thinking" in extra_params:
+                enable_thinking = extra_params["enable_thinking"]
+            elif default_enable_thinking is not None:
+                # Use per-app default if provided
+                enable_thinking = default_enable_thinking
+            else:
+                # Fall back to global default (disabled)
+                enable_thinking = False
 
         incremental_output = extra_params.get("incremental_output", True)
 
@@ -186,7 +209,7 @@ class BailianTranslator:
         self,
         request: ChatCompletionRequest,
         api_key: str,
-        app_id: str
+        app_config: AppConfig
     ) -> ChatCompletionResponse:
         """
         Create a non-streaming chat completion using Bailian App.
@@ -194,7 +217,7 @@ class BailianTranslator:
         Args:
             request: OpenAI-style chat completion request
             api_key: DashScope API key
-            app_id: Bailian application ID
+            app_config: Bailian application configuration (with app_id and defaults)
 
         Returns:
             OpenAI-style chat completion response
@@ -203,11 +226,15 @@ class BailianTranslator:
         # Convert messages to prompt
         prompt = self.messages_to_prompt(request.messages)
 
-        # Get thinking parameters
-        has_thoughts, enable_thinking, incremental_output = self._get_thinking_params(request)
+        # Get thinking parameters with per-app defaults
+        has_thoughts, enable_thinking, incremental_output = self._get_thinking_params(
+            request,
+            default_enable_thinking=app_config.enable_thinking,
+            default_has_thoughts=app_config.has_thoughts
+        )
 
         # Build Bailian request
-        url = f"{self.base_url}/apps/{app_id}/completion"
+        url = f"{self.base_url}/apps/{app_config.app_id}/completion"
         payload = {
             "input": {"prompt": prompt},
             "parameters": {
@@ -261,7 +288,7 @@ class BailianTranslator:
         self,
         request: ChatCompletionRequest,
         api_key: str,
-        app_id: str
+        app_config: AppConfig
     ) -> AsyncGenerator[str, None]:
         """
         Create a streaming chat completion using Bailian App with reasoning support.
@@ -269,7 +296,7 @@ class BailianTranslator:
         Args:
             request: OpenAI-style chat completion request
             api_key: DashScope API key
-            app_id: Bailian application ID
+            app_config: Bailian application configuration (with app_id and defaults)
 
         Yields:
             SSE-formatted response chunks
@@ -278,11 +305,15 @@ class BailianTranslator:
         # Convert messages to prompt
         prompt = self.messages_to_prompt(request.messages)
 
-        # Get thinking parameters
-        has_thoughts, enable_thinking, incremental_output = self._get_thinking_params(request)
+        # Get thinking parameters with per-app defaults
+        has_thoughts, enable_thinking, incremental_output = self._get_thinking_params(
+            request,
+            default_enable_thinking=app_config.enable_thinking,
+            default_has_thoughts=app_config.has_thoughts
+        )
 
         # Build Bailian request
-        url = f"{self.base_url}/apps/{app_id}/completion"
+        url = f"{self.base_url}/apps/{app_config.app_id}/completion"
         payload = {
             "input": {"prompt": prompt},
             "parameters": {

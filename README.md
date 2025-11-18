@@ -60,8 +60,12 @@ DASHSCOPE_API_KEY=sk-your_dashscope_api_key
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/api/v1
 
 # Bailian App Configuration (Multiple Apps)
-# Map model names to Bailian app IDs
-BAILIAN_APP_MAPPING='{"bailian-app-reasoning":"app_id_1","bailian-app-fast":"app_id_2","bailian-app-pro":"app_id_3"}'
+# Simple format: Map model names to Bailian app IDs
+BAILIAN_APP_MAPPING='{"bailian-app-reasoning":"app_id_1","bailian-app-fast":"app_id_2"}'
+
+# Extended format: Map with per-app default thinking parameters
+# BAILIAN_APP_MAPPING='{"bailian-app-reasoning":{"app_id":"app_id_1","enable_thinking":true,"has_thoughts":false},"bailian-app-fast":{"app_id":"app_id_2","enable_thinking":false}}'
+
 BAILIAN_REASONING_DELTA_MAX=180
 
 # Server Configuration
@@ -69,6 +73,13 @@ HOST=0.0.0.0
 PORT=8000
 LOG_LEVEL=INFO
 ```
+
+**Per-App Default Thinking Parameters** (v0.2.0+):
+The extended format allows you to configure default `enable_thinking` and `has_thoughts` for each app:
+- `enable_thinking`: Whether to enable internal thinking (improves quality but slower)
+- `has_thoughts`: Whether to show reasoning process to users
+
+These defaults can be overridden per-request using `reasoning_effort` or explicit parameters.
 
 See `.env.example` for all available configuration options.
 

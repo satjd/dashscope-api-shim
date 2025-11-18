@@ -93,7 +93,7 @@ def main():
     import uvicorn
 
     uvicorn.run(
-        "dashscope_shim.main:app",
+        "dashscope_api_shim.main:app",
         host=settings.HOST,
         port=settings.PORT,
         log_level=settings.LOG_LEVEL.lower(),

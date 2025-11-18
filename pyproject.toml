@@ -5,16 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dashscope-api-shim"
 version = "0.1.0"
-description = "A shim to translate Aliyun DashScope API to OpenAI Chat Completions API"
+description = "OpenAI-compatible API shim for Aliyun Bailian applications with o1-style reasoning support"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
-    { name = "Your Name", email = "your.email@example.com" }
+    { name = "Ao Song", email = "songao60@foxmail.com" }
 ]
 maintainers = [
-    { name = "Your Name", email = "your.email@example.com" }
+    { name = "Ao Song", email = "songao60@foxmail.com" }
 ]
-keywords = ["dashscope", "openai", "api", "shim", "aliyun", "chat", "completions"]
+keywords = ["dashscope", "bailian", "openai", "api", "shim", "aliyun", "chat", "completions", "reasoning", "ai"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -36,8 +36,6 @@ dependencies = [
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
     "python-dotenv>=1.0.0",
-    "openai>=1.0.0",
-    "dashscope>=1.14.0",
 ]
 
 [project.optional-dependencies]

@@ -17,20 +17,22 @@ async def list_models():
     """
     List available Bailian app models.
 
-    Returns a list of Bailian app models formatted as OpenAI model objects.
+    Returns a list of all configured Bailian app models from the mapping.
     """
-    model_id = f"bailian-app-{settings.BAILIAN_APP_ID}"
+    app_mapping = settings.get_app_mapping()
+    created_time = int(time.time())
 
     models = [
         {
-            "id": model_id,
+            "id": model_name,
             "object": "model",
-            "created": int(time.time()),
+            "created": created_time,
             "owned_by": "bailian",
             "permission": [],
-            "root": model_id,
+            "root": model_name,
             "parent": None,
         }
+        for model_name in app_mapping.keys()
     ]
 
     return {
@@ -50,13 +52,13 @@ async def get_model(model_id: str):
     Returns:
         Model information in OpenAI format
     """
-    bailian_model_id = f"bailian-app-{settings.BAILIAN_APP_ID}"
+    app_id = settings.get_app_id_for_model(model_id)
 
-    # Only support the configured Bailian app model
-    if model_id != bailian_model_id:
+    if not app_id:
+        available_models = list(settings.get_app_mapping().keys())
         return {
             "error": {
-                "message": f"Model '{model_id}' not found. Only '{bailian_model_id}' is available.",
+                "message": f"Model '{model_id}' not found. Available models: {', '.join(available_models)}",
                 "type": "invalid_request_error",
                 "code": "model_not_found",
             }
@@ -70,5 +72,5 @@ async def get_model(model_id: str):
         "permission": [],
         "root": model_id,
         "parent": None,
-        "description": "Bailian application with reasoning support",
+        "description": f"Bailian application (app_id: {app_id}) with reasoning support",
     }

@@ -35,8 +35,14 @@ def test_list_models(client):
     data = response.json()
     assert data["object"] == "list"
     assert len(data["data"]) > 0
-    # Check for Bailian app model
-    assert any(model["id"].startswith("bailian-app-") for model in data["data"])
+    # Check that all models have required fields
+    for model in data["data"]:
+        assert "id" in model
+        assert "object" in model
+        assert model["object"] == "model"
+        assert "created" in model
+        assert "owned_by" in model
+        assert model["owned_by"] == "bailian"
 
 
 def test_get_model(client):

@@ -38,13 +38,30 @@ async def create_chat_completion(
     Create a chat completion using Bailian App.
 
     This endpoint uses Bailian App API with reasoning support for all requests.
+    Maps the requested model name to the corresponding Bailian app ID.
     """
     try:
         logger.info(f"Processing chat completion request for model: {request.model}")
 
-        # Use Bailian translator for all requests
+        # Get app_id for the requested model
+        app_id = settings.get_app_id_for_model(request.model)
+        if not app_id:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": {
+                        "message": f"Model '{request.model}' not found. Please check /v1/models for available models.",
+                        "type": "invalid_request_error",
+                        "code": "model_not_found",
+                    }
+                },
+            )
+
+        logger.info(f"Using Bailian app ID: {app_id}")
+
+        # Use Bailian translator with the mapped app_id
         if request.stream:
-            stream = translator.create_chat_completion_stream(request, api_key)
+            stream = translator.create_chat_completion_stream(request, api_key, app_id)
             return StreamingResponse(
                 stream,
                 media_type="text/event-stream",
@@ -55,7 +72,7 @@ async def create_chat_completion(
                 },
             )
         else:
-            response = await translator.create_chat_completion(request, api_key)
+            response = await translator.create_chat_completion(request, api_key, app_id)
             return response
 
     except Exception as e:

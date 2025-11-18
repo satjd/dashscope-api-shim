@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dashscope-api-shim"
-version = "0.1.0"
-description = "OpenAI-compatible API shim for Aliyun Bailian applications with o1-style reasoning support"
+version = "0.2.0"
+description = "OpenAI-compatible API shim for Aliyun Bailian applications with o1-style reasoning support and multi-app routing"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [

@@ -27,12 +27,8 @@ class BailianTranslator:
     def __init__(self):
         """Initialize the Bailian translator."""
         self.base_url = settings.DASHSCOPE_BASE_URL
-        self.app_id = settings.BAILIAN_APP_ID
         self.reasoning_max_len = settings.BAILIAN_REASONING_DELTA_MAX
         self.timeout = settings.REQUEST_TIMEOUT
-
-        if not self.app_id:
-            raise ValueError("BAILIAN_APP_ID is required. Please set it in your .env file.")
 
     def messages_to_prompt(self, messages: List[ChatMessage]) -> str:
         """
@@ -189,7 +185,8 @@ class BailianTranslator:
     async def create_chat_completion(
         self,
         request: ChatCompletionRequest,
-        api_key: str
+        api_key: str,
+        app_id: str
     ) -> ChatCompletionResponse:
         """
         Create a non-streaming chat completion using Bailian App.
@@ -197,6 +194,7 @@ class BailianTranslator:
         Args:
             request: OpenAI-style chat completion request
             api_key: DashScope API key
+            app_id: Bailian application ID
 
         Returns:
             OpenAI-style chat completion response
@@ -209,7 +207,7 @@ class BailianTranslator:
         has_thoughts, enable_thinking, incremental_output = self._get_thinking_params(request)
 
         # Build Bailian request
-        url = f"{self.base_url}/apps/{self.app_id}/completion"
+        url = f"{self.base_url}/apps/{app_id}/completion"
         payload = {
             "input": {"prompt": prompt},
             "parameters": {
@@ -244,7 +242,7 @@ class BailianTranslator:
                 id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
                 object="chat.completion",
                 created=int(time.time()),
-                model=f"bailian-app-{self.app_id}",
+                model=request.model,  # Return the original model name from request
                 choices=[
                     Choice(
                         index=0,
@@ -262,7 +260,8 @@ class BailianTranslator:
     async def create_chat_completion_stream(
         self,
         request: ChatCompletionRequest,
-        api_key: str
+        api_key: str,
+        app_id: str
     ) -> AsyncGenerator[str, None]:
         """
         Create a streaming chat completion using Bailian App with reasoning support.
@@ -270,6 +269,7 @@ class BailianTranslator:
         Args:
             request: OpenAI-style chat completion request
             api_key: DashScope API key
+            app_id: Bailian application ID
 
         Yields:
             SSE-formatted response chunks
@@ -282,7 +282,7 @@ class BailianTranslator:
         has_thoughts, enable_thinking, incremental_output = self._get_thinking_params(request)
 
         # Build Bailian request
-        url = f"{self.base_url}/apps/{self.app_id}/completion"
+        url = f"{self.base_url}/apps/{app_id}/completion"
         payload = {
             "input": {"prompt": prompt},
             "parameters": {
@@ -300,7 +300,7 @@ class BailianTranslator:
         }
 
         chat_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
-        model_name = f"bailian-app-{self.app_id}"
+        model_name = request.model  # Return original model name from request
         created_time = int(time.time())
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:

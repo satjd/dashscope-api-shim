@@ -1,7 +1,9 @@
 """Configuration management for DashScope API Shim."""
 
-from typing import List, Optional
+import json
+from typing import Dict, List, Optional
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,9 +20,62 @@ class Settings(BaseSettings):
     DASHSCOPE_API_KEY: str
     DASHSCOPE_BASE_URL: str = "https://dashscope.aliyuncs.com/api/v1"
 
-    # Bailian App Configuration (Required)
-    BAILIAN_APP_ID: str  # Bailian Application ID is required
+    # Bailian App Configuration
+    # Option 1: Single app (legacy, for backward compatibility)
+    BAILIAN_APP_ID: Optional[str] = None
+
+    # Option 2: Multiple apps mapping (model_name -> app_id)
+    # Format: JSON string like '{"qwen-plus": "app-id-1", "qwen-turbo": "app-id-2"}'
+    BAILIAN_APP_MAPPING: Optional[str] = None
+
     BAILIAN_REASONING_DELTA_MAX: int = 180  # Max length for reasoning delta in streaming
+
+    @field_validator('BAILIAN_APP_MAPPING', mode='before')
+    @classmethod
+    def parse_app_mapping(cls, v: Optional[str]) -> Optional[str]:
+        """Validate that BAILIAN_APP_MAPPING is valid JSON if provided."""
+        if v is None:
+            return v
+        try:
+            # Try to parse as JSON to validate format
+            parsed = json.loads(v)
+            if not isinstance(parsed, dict):
+                raise ValueError("BAILIAN_APP_MAPPING must be a JSON object")
+            # Validate all values are strings
+            for key, value in parsed.items():
+                if not isinstance(key, str) or not isinstance(value, str):
+                    raise ValueError("BAILIAN_APP_MAPPING keys and values must be strings")
+            return v
+        except json.JSONDecodeError as e:
+            raise ValueError(f"BAILIAN_APP_MAPPING must be valid JSON: {e}")
+
+    def get_app_mapping(self) -> Dict[str, str]:
+        """
+        Get the app ID mapping as a dictionary.
+
+        Returns dict of model_name -> app_id.
+        Falls back to legacy BAILIAN_APP_ID if BAILIAN_APP_MAPPING not set.
+        """
+        if self.BAILIAN_APP_MAPPING:
+            return json.loads(self.BAILIAN_APP_MAPPING)
+        elif self.BAILIAN_APP_ID:
+            # Legacy mode: single app ID
+            return {f"bailian-app-{self.BAILIAN_APP_ID}": self.BAILIAN_APP_ID}
+        else:
+            raise ValueError("Either BAILIAN_APP_MAPPING or BAILIAN_APP_ID must be set")
+
+    def get_app_id_for_model(self, model_name: str) -> Optional[str]:
+        """
+        Get app ID for a given model name.
+
+        Args:
+            model_name: The model name from the request
+
+        Returns:
+            The corresponding app ID, or None if not found
+        """
+        mapping = self.get_app_mapping()
+        return mapping.get(model_name)
 
     # Server Configuration
     HOST: str = "0.0.0.0"

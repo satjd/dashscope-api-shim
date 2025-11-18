@@ -1,11 +1,12 @@
 # Bailian App API Shim
 
-An OpenAI-compatible API shim for Aliyun Bailian (百炼) applications with advanced reasoning support. Enables seamless integration of Bailian apps with OpenAI-compatible clients like Cherry Studio, Continue, and more.
+An OpenAI-compatible API shim for Aliyun Bailian (百炼) applications with advanced reasoning support and multi-app routing. Enables seamless integration of Bailian apps with OpenAI-compatible clients like Cherry Studio, Continue, and more.
 
 ## Features
 
 - **OpenAI Chat Completions API Compatible** - Works with any OpenAI-compatible client
 - **Bailian App Integration** - Direct integration with Aliyun Bailian applications
+- **Multi-App Routing** (v0.2.0+) - Map multiple Bailian apps to different model names
 - **Reasoning Support** - Built-in support for chain-of-thought reasoning (similar to OpenAI o1)
 - **Streaming with SSE** - Server-Sent Events streaming for real-time responses
 - **Reasoning Effort Control** - OpenAI o1-style `reasoning_effort` parameter
@@ -34,13 +35,33 @@ uv pip install -r requirements.txt
 
 Create a `.env` file in the project root:
 
+### Single App Mode (Legacy)
+
 ```env
 # DashScope/Bailian Configuration (Required)
 DASHSCOPE_API_KEY=sk-your_dashscope_api_key
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/api/v1
 
-# Bailian App Configuration (Required)
+# Bailian App Configuration (Single App)
 BAILIAN_APP_ID=your_bailian_app_id
+BAILIAN_REASONING_DELTA_MAX=180
+
+# Server Configuration
+HOST=0.0.0.0
+PORT=8000
+LOG_LEVEL=INFO
+```
+
+### Multi-App Mode (v0.2.0+)
+
+```env
+# DashScope/Bailian Configuration (Required)
+DASHSCOPE_API_KEY=sk-your_dashscope_api_key
+DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/api/v1
+
+# Bailian App Configuration (Multiple Apps)
+# Map model names to Bailian app IDs
+BAILIAN_APP_MAPPING='{"bailian-app-reasoning":"app_id_1","bailian-app-fast":"app_id_2","bailian-app-pro":"app_id_3"}'
 BAILIAN_REASONING_DELTA_MAX=180
 
 # Server Configuration
@@ -82,7 +103,7 @@ client = openai.OpenAI(
     api_key="your_dashscope_api_key"
 )
 
-# Basic request
+# Single-app mode (legacy) - auto-generated model name
 response = client.chat.completions.create(
     model="bailian-app-your_app_id",
     messages=[
@@ -90,11 +111,19 @@ response = client.chat.completions.create(
     ]
 )
 
+# Multi-app mode (v0.2.0+) - use custom model names from BAILIAN_APP_MAPPING
+response = client.chat.completions.create(
+    model="bailian-app-reasoning",  # Maps to specific app_id via config
+    messages=[
+        {"role": "user", "content": "Solve this complex problem..."}
+    ]
+)
+
 print(response.choices[0].message.content)
 
-# With reasoning (OpenAI o1-style)
+# With reasoning (OpenAI o1-style) using another configured app
 response = client.chat.completions.create(
-    model="bailian-app-your_app_id",
+    model="bailian-app-fast",  # Another app from BAILIAN_APP_MAPPING
     messages=[
         {"role": "user", "content": "Explain quantum computing"}
     ],
@@ -110,7 +139,7 @@ for chunk in response:
 ### Using with curl
 
 ```bash
-# Basic request
+# Single-app mode (legacy)
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your_dashscope_api_key" \
@@ -119,16 +148,20 @@ curl -X POST http://localhost:8000/v1/chat/completions \
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 
-# With reasoning effort
+# Multi-app mode (v0.2.0+) with custom model names
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your_dashscope_api_key" \
   -d '{
-    "model": "bailian-app-your_app_id",
+    "model": "bailian-app-reasoning",
     "messages": [{"role": "user", "content": "Explain recursion"}],
     "stream": true,
     "reasoning_effort": "high"
   }'
+
+# List available models
+curl -X GET http://localhost:8000/v1/models \
+  -H "Authorization: Bearer your_dashscope_api_key"
 ```
 
 ## Reasoning Support
@@ -256,10 +289,21 @@ services:
 
 This shim supports Bailian (百炼) applications:
 
-- Any Bailian app specified by `BAILIAN_APP_ID`
-- Model ID format: `bailian-app-{your_app_id}`
+### Single App Mode (Legacy)
+- Configure one app via `BAILIAN_APP_ID`
+- Auto-generated model name: `bailian-app-{your_app_id}`
+
+### Multi-App Mode (v0.2.0+)
+- Configure multiple apps via `BAILIAN_APP_MAPPING`
+- Custom model names mapping to different app IDs
+- Example: `{"bailian-app-reasoning": "app_id_1", "bailian-app-fast": "app_id_2"}`
+- Each model can have different capabilities based on the Bailian app configuration
+
+All models support:
 - Full reasoning and chain-of-thought support
+- OpenAI o1-style `reasoning_effort` parameter
 - Streaming with Server-Sent Events (SSE)
+- Standard OpenAI Chat Completions API format
 
 ## Contributing
 
